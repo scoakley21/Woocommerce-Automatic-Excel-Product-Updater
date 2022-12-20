@@ -189,7 +189,11 @@ if ( ! wp_next_scheduled( 'wc_csv_import_event' ) ) {
     wp_schedule_event( time(), $time_interval, 'wc_csv_import_event' );
 }
 
-// create update function
+if ( ! function_exists( 'wc_csv_import_update_products' ) ) {
+    /**
+     * Update the products with matching SKUs using data from the CSV file.
+     */
+
 function wc_csv_import_update_products() {
     // get the CSV import URL and column mapping
     $csv_url = get_option( 'wc_csv_import_csv_url' );
@@ -223,6 +227,7 @@ function wc_csv_import_update_products() {
         }
         wp_update_post( $product_update );
     }
+  }
 }
 // update products
 if ( isset( $_POST['wc_csv_import_time_interval_submitted'] ) ) {
@@ -240,43 +245,6 @@ if ( isset( $_POST['wc_csv_import_time_interval_submitted'] ) ) {
     // redirect to the plugin settings page
     wp_safe_redirect( admin_url( 'admin.php?page=wc-csv-import&settings-updated=true' ) );
     exit;
-}
-/**
- * Update the products with matching SKUs using data from the CSV file.
- */
-function wc_csv_import_update_products() {
-    // get the CSV import URL and column mapping
-    $csv_url = get_option( 'wc_csv_import_csv_url' );
-    $column_mapping = get_transient( 'wc_csv_import_column_mapping' );
-    if ( ! $csv_url || ! $column_mapping ) {
-        return;
-    }
-    // fetch the CSV file
-    $response = wp_remote_get( $csv_url );
-    if ( is_wp_error( $response ) || 200 != wp_remote_retrieve_response_code( $response ) ) {
-        return;
-    }
-    $csv_data = wp_remote_retrieve_body( $response );
-    // parse the CSV data
-    $csv_lines = explode( "\n", $csv_data );
-    $csv_header = str_getcsv( array_shift( $csv_lines ) );
-    foreach ( $csv_lines as $csv_line ) {
-        $csv_line = str_getcsv( $csv_line );
-        $product_data = array_combine( $csv_header, $csv_line );
-        // update the product with matching SKU
-        $sku = $product_data[ $column_mapping['SKU'] ];
-        $product_id = wc_get_product_id_by_sku( $sku );
-        if ( ! $product_id ) {
-            continue;
-        }
-        $product_update = array(
-            'ID' => $product_id,
-        );
-        foreach ( $column_mapping as $csv_column => $product_field ) {
-            $product_update[ $product_field ] = $product_data[ $csv_column ];
-        }
-        wp_update_post( $product_update );
-    }
 }
 
 /**
