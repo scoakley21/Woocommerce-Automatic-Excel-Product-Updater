@@ -1,10 +1,9 @@
 <?php
 /**
- * Plugin Name: WooCommerce CSV Import
+ * Plugin Name: WooCommerce Automatic CSV Import
  * Description: Automatically updates products at a given interval by importing a CSV from an external site and allows column mapping within the admin panel.
  * Version: 1.0
- * Author: Your Name
- * Author URI: http://your-website.com
+ * Author: Steve Coakley 
  * License: GPL2
  */
 
@@ -52,13 +51,11 @@ function wc_csv_import_settings_page() {
         update_option( 'wc_csv_import_settings', $options );
         wp_clear_scheduled_hook( 'wc_csv_import_import_event' );
         wp_schedule_event( time(), $options['import_interval'], 'wc_csv_import_import_event' );
-        
-        // import the CSV file and update the products immediately
-        $csv_data = wc_csv_import_get_csv_data( $options['csv_url'] );
-        wc_csv_import_update_products( $csv_data, $options['column_mapping'] );
-        
         $message = __( 'Settings saved.', 'wc-csv-import' );
     }
     
     // get the current plugin settings
-    $options
+    $options = get_option( 'wc_csv_import_settings' );
+    $csv_url = ( isset( $options['csv_url'] ) ) ? $options['csv_url'] : '';
+    $import_interval = ( isset( $options['import_interval'] ) ) ? $options['import_interval'] : '';
+    $column_mapping = ( isset( $options['column_mapping'] ) ) ? $options['column_mapping'] :
