@@ -12,135 +12,169 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// Create a new menu item under WooCommerce settings
-add_filter( 'woocommerce_settings_tabs_array', 'wc_excel_import_add_settings_tab', 50 );
-function wc_excel_import_add_settings_tab( $settings_tabs ) {
-    $settings_tabs['excel_import'] = __( 'Excel Import', 'woocommerce' );
-    return $settings_tabs;
+// Step 1: Display the form to input the Excel file URL and import the file
+add_action( 'admin_menu', 'wc_excel_import_menu' );
+function wc_excel_import_menu() {
+    add_submenu_page( 'woocommerce', 'Excel Import', 'Excel Import', 'manage_options', 'excel-import', 'wc_excel_import_page' );
 }
 
-// Display the plugin settings page
-add_action( 'woocommerce_settings_tabs_excel_import', 'wc_excel_import_settings_page' );
-function wc_excel_import_settings_page() {
-    woocommerce_admin_fields( wc_excel_import_settings() );
-}
-
-// Save the plugin settings
-add_action( 'woocommerce_update_options_excel_import', 'wc_excel_import_update_settings' );
-function wc_excel_import_update_settings() {
-    woocommerce_update_options( wc_excel_import_settings() );
-}
-
-// Define the plugin settings fields
-function wc_excel_import_settings() {
-    $settings = array(
-        'section_title' => array(
-            'name'     => __( 'Excel Import', 'woocommerce' ),
-            'type'     => 'title',
-            'desc'     => '',
-            'id'       => 'wc_excel_import_section_title'
-        ),
-        'url' => array(
-            'name' => __( 'Excel File URL', 'woocommerce' ),
-            'type' => 'text',
-            'desc' => __( 'Enter the URL of the Excel file to import', 'woocommerce' ),
-            'id'   => 'wc_excel_import_url'
-        ),
-        'column_mapping' => array(
-            'name'    => __( 'Column Mapping', 'woocommerce' ),
-            'type'    => 'select',
-            'options' => array(
-                'sku'         => __( 'SKU', 'woocommerce' ),
-                'name'        => __( 'Name', 'woocommerce' ),
-                'description' => __( 'Description', 'woocommerce' ),
-                'price'       => __( 'Price', 'woocommerce' ),
-                'stock'       => __( 'Stock', 'woocommerce' ),
-                'image'       => __( 'Image', 'woocommerce' ),
-                'none'        => __( 'Do not import', 'woocommerce' )
-            ),
-            'desc' => __( 'Select the Excel column that corresponds to each product field', 'woocommerce' ),
-            'id'   => 'wc_excel_import_column_mapping'
-        ),
-        'section_end' => array(
-             'type' => 'sectionend',
-             'id' => 'wc_excel_import_section_end'
-        )
-    );
-    return $settings;
-}
-
-// Handle form submission
-add_action( 'admin_init', 'wc_excel_import_form_handler' );
-function wc_excel_import_form_handler() {
-    if ( isset( $_POST['wc_excel_import_url'] ) && isset( $_POST['wc_excel_import_column_mapping'] ) ) {
-        update_option( 'wc_excel_import_url', sanitize_text_field( $_POST['wc_excel_import_url'] ) );
-        update_option( 'wc_excel_import_column_mapping', sanitize_text_field( $_POST['wc_excel_import_column_mapping'] ) );
+function wc_excel_import_page() {
+    // Check if the form has been submitted
+    if ( isset( $_POST['wc_excel_import_url'] ) && isset( $_POST['wc_excel_import_import'] ) ) {
+        // Get the user-defined URL and import the Excel file
+        $url = sanitize_text_field( $_POST['wc_excel_import_url'] );
+        $excel = PHPExcel_IOFactory::load( $url );
+        $data = $excel->getActiveSheet()->toArray();
+        // Save the data and column headings to the session
+        $_SESSION['wc_excel_import_data'] = $data;
+        $_SESSION['wc_excel_import_column_headings'] = array_shift( $data );
+        // Display a success notice and the column mapping form
+        echo '<div class="notice notice-success is-dismissible"><p>Excel file imported successfully</p></div>';
+        wc_excel_import_column_mapping_form();
+        return;
     }
+    // Display the form to input the Excel file URL
+    ?>
+    <form method="post">
+        <table class="form-table">
+            <tbody>
+                <tr>
+                    <th scope="row"><label for="wc_excel_import_url">Excel File URL</label></th>
+                    <td>
+                        <input name="wc_excel_import_url" type="text" id="wc_excel_import_url" class="regular-text">
+                        <p class="description" id="wc_excel_import_url-description">Enter the URL of the Excel file to import</p>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="submit"><input type="submit" name="wc_excel_import_import" id="wc_excel_import_import" class="button button-primary" value="Import"></p>
+    </form>
+    <?php
 }
 
-// Import the Excel file and update products
+// Step 2: Display the form to map the columns to product fields
+function wc_excel_import_column_mapping_form() {
+    // Get the data and column headings from the session
+    $data = $_SESSION['wc_excel_import_data'];
+    $column_headings = $_SESSION['wc_excel_import_column_headings'];
+    // Check if the form has been submitted
+    if ( isset( $_POST['wc_excel_import_column_mapping'] ) && isset( $_POST['wc_excel_import_next'] ) ) {
+        // Save the column mapping to the session
+        $_SESSION['wc_excel_import_column_mapping'] = $_POST['wc_excel_import_column_mapping'];
+        // Display the update interval form
+        wc_excel_import_update_interval_form();
+        return;
+    }
+    // Display the form to map the columns
+    ?>
+    <form method="post">
+        <table class="form-table">
+            <tbody>
+                <?php
+                foreach ( $column_headings as $column_heading ) {
+                    ?>
+                    <tr>
+                        <th scope="row"><label for="wc_excel_import_column_mapping_<?php echo esc_attr( $column_heading ); ?>"><?php echo esc_html( $column_heading ); ?></label></th>
+                        <td>
+                            <select name="wc_excel_import_column_mapping[<?php echo esc_attr( $column_heading ); ?>]" id="wc_excel_import_column_mapping_<?php echo esc_attr( $column_heading ); ?>">
+                                <option value="">Do not import</option>
+                                <option value="sku">SKU</option>
+                                <option value="name">Name</option>
+                                <option value="description">Description</option>
+                                <option value="price">Price</option>
+                                <option value="stock">Stock</option>
+                                <option value="image">Image</option>
+                            </select>
+                            <p class="description" id="wc_excel_import_column_mapping_<?php echo esc_attr( $column_heading ); ?>-description">Map the column to a product field</p>
+                        </td>
+                    </tr>
+                    <?php
+                }
+                ?>
+            </tbody>
+        </table>
+        <p class="submit"><input type="submit" name="wc_excel_import_next" id="wc_excel_import_next" class="button button-primary" value="Next"></p>
+    </form>
+    <?php
+}
+
+// Step 3: Display the form to select the update interval
+function wc_excel_import_update_interval_form() {
+    // Check if the form has been submitted
+    if ( isset( $_POST['wc_excel_import_update_interval'] ) && isset( $_POST['wc_excel_import_save_settings'] ) ) {
+        // Get the update interval and column mapping from the form submission
+        $update_interval = sanitize_text_field( $_POST['wc_excel_import_update_interval'] );
+        $column_mapping = $_POST['wc_excel_import_column_mapping'];
+        // Save the update interval and column mapping to the database
+        update_option( 'wc_excel_import_update_interval', $update_interval );
+        update_option( 'wc_excel_import_column_mapping', $column_mapping );
+        // Update the products and schedule the cron job
+        wc_excel_import_and_update();
+        wc_excel_import_schedule_cron( $update_interval );
+        // Display a success notice
+        echo '<div class="notice notice-success is-dismissible"><p>Settings saved and products updated</p></div>';
+        // Display the current time and date
+        echo '<p>Last updated: ' . date( 'Y-m-d H:i:s' ) . '</p>';
+        return;
+    }
+    // Display the form to select the update interval
+    ?>
+    <form method="post">
+        <table class="form-table">
+            <tbody>
+                <tr>
+                    <th scope="row"><label for="wc_excel_import_update_interval">Update Interval</label></th>
+                    <td>
+                        <select name="wc_excel_import_update_interval" id="wc_excel_import_update_interval">
+                            <option value="hourly">Hourly</option>
+                            <option value="twicedaily">Twice Daily</option>
+                            <option value="daily">Daily</option>
+                        </select>
+                        <p class="description" id="wc_excel_import_update_interval-description">Select the interval to update the products</p>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="submit"><input type="submit" name="wc_excel_import_save_settings" id="wc_excel_import_save_settings" class="button button-primary" value="Save Settings"></p>
+    </form>
+    <?php
+}
+
+// Step 5: Update the products and schedule the cron job
+// Update the products with the Excel data and column mapping
 function wc_excel_import_and_update() {
-    // Get the user-defined URL and column mapping from the database
-    $url = get_option( 'wc_excel_import_url' );
-    $column_mapping = get_option( 'wc_excel_import_column_mapping' );
-    
-    // Use PHPExcel to read the Excel file and convert it to an array
-    $excel = PHPExcel_IOFactory::load( $url );
-    $data = $excel->getActiveSheet()->toArray();
-    
-    // Iterate through the array and update products with matching SKUs
+    // Get the data, column headings, and column mapping from the session
+    $data = $_SESSION['wc_excel_import_data'];
+    $column_headings = $_SESSION['wc_excel_import_column_headings'];
+    $column_mapping = $_SESSION['wc_excel_import_column_mapping'];
+    // Loop through the data and update the products
     foreach ( $data as $row ) {
-        $sku = $row[ array_search( 'sku', $column_mapping ) ];
-        $product = wc_get_product( wc_get_product_id_by_sku( $sku ) );
-        if ( ! $product ) {
-            continue;
-        }
-        
-        $update_data = array();
-        foreach ( $column_mapping as $key => $value ) {
-            if ( $value == 'sku' ) {
-                continue;
-            }
-            if ( $value == 'name' ) {
-                $update_data['name'] = $row[ $key ];
-            }
-            if ( $value == 'description' ) {
-                $update_data['description'] = $row[ $key ];
-            }
-            if ( $value == 'price' ) {
-                $update_data['price'] = $row[ $key ];
-            }
-            if ( $value == 'stock' ) {
-                $update_data['stock_quantity'] = $row[ $key ];
-            }
-            if ( $value == 'image' ) {
-                $update_data['image_id'] = wc_download_image_from_url( $row[ $key ] );
+        $product_data = array();
+        // Map the columns to the product fields
+        foreach ( $column_headings as $index => $column_heading ) {
+            $field = $column_mapping[$column_heading];
+            if ( !empty( $field ) ) {
+                $product_data[$field] = $row[$index];
             }
         }
-        $product->set_props( $update_data );
-        $product->save();
+        // Update the product with the SKU
+        $sku = $product_data['sku'];
+        $product_id = wc_get_product_id_by_sku( $sku );
+        if ( $product_id ) {
+            $product = wc_get_product( $product_id );
+            $product->set_props( $product_data );
+            $product->save();
+        }
     }
 }
 
-// Register a custom cron schedule
-add_filter( 'cron_schedules', 'wc_excel_import_cron_schedule' );
-function wc_excel_import_cron_schedule( $schedules ) {
-    $schedules['hourly'] = array(
-        'interval' => 3600, // seconds
-        'display'  => __( 'Once Hourly' ),
-    );
-    return $schedules;
+// Schedule the cron job to update the products at the specified interval
+function wc_excel_import_schedule_cron( $interval ) {
+    wp_clear_scheduled_hook( 'wc_excel_import_event' );
+    wp_schedule_event( time(), $interval, 'wc_excel_import_event' );
 }
 
-// Schedule the cron job to run hourly
-if ( ! wp_next_scheduled( 'wc_excel_import_cron_hook' ) ) {
-    wp_schedule_event( time(), 'hourly', 'wc_excel_import_cron_hook' );
-}
-
-// Hook the cron job function to the scheduled event
-add_action( 'wc_excel_import_cron_hook', 'wc_excel_import_cron_function' );
-function wc_excel_import_cron_function() {
-    wc_excel_import_and_update();
-}
+// Hook the cron job to the event
+add_action( 'wc_excel_import_event', 'wc_excel_import_and_update' );
 
 
